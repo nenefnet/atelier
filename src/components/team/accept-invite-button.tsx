@@ -1,31 +1,16 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { acceptInvitation } from '@/lib/actions/team';
+// Real invitation acceptance was removed for the public demo deployment.
+// The /invite/[token] page no longer renders this component, but the file
+// exists to satisfy any lingering imports. Safe to delete manually.
+
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 
-export function AcceptInviteButton({ token }: { token: string }) {
-  const [pending, start] = useTransition();
-  const [error, setError] = useState<string | null>(null);
-
-  const onAccept = () => {
-    setError(null);
-    start(async () => {
-      const res = await acceptInvitation(token);
-      if (res?.error) setError(res.error);
-    });
-  };
-
+export function AcceptInviteButton({ token: _token }: { token: string }) {
   return (
-    <div className="space-y-3">
-      <Button onClick={onAccept} disabled={pending} className="w-full">
-        {pending ? 'Joining…' : 'Accept invitation'}
-      </Button>
-      {error && (
-        <p className="rounded-md border border-danger/30 bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error}
-        </p>
-      )}
-    </div>
+    <Link href="/dashboard">
+      <Button>Open dashboard</Button>
+    </Link>
   );
 }
