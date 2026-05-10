@@ -9,6 +9,18 @@ import { updateProfile, renameWorkspace } from '@/lib/actions/settings';
 
 export const metadata = { title: 'Settings · Atelier' };
 
+// Form-action wrappers that swallow the action's return value. Next.js
+// requires `<form action={fn}>` to type as `(fd) => void | Promise<void>`.
+async function handleUpdateProfile(formData: FormData) {
+  'use server';
+  await updateProfile(formData);
+}
+
+async function handleRenameWorkspace(formData: FormData) {
+  'use server';
+  await renameWorkspace(formData);
+}
+
 export default async function SettingsPage() {
   const { user, ws } = await requireActiveWorkspace();
   const [me] = await db
@@ -27,7 +39,7 @@ export default async function SettingsPage() {
         <section className="rounded-lg border border-border bg-card p-6 shadow-card">
           <h2 className="text-sm font-semibold text-ink mb-1">Profile</h2>
           <p className="text-xs text-ink-faint mb-5">Your name as it appears to teammates.</p>
-          <form action={updateProfile} className="space-y-3">
+          <form action={handleUpdateProfile} className="space-y-3">
             <label className="block">
               <span className="text-xs font-medium text-ink-muted">Display name</span>
               <Input
@@ -46,7 +58,7 @@ export default async function SettingsPage() {
         <section className="rounded-lg border border-border bg-card p-6 shadow-card">
           <h2 className="text-sm font-semibold text-ink mb-1">Workspace</h2>
           <p className="text-xs text-ink-faint mb-5">Settings for {ws.name}.</p>
-          <form action={renameWorkspace} className="space-y-3">
+          <form action={handleRenameWorkspace} className="space-y-3">
             <label className="block">
               <span className="text-xs font-medium text-ink-muted">Name</span>
               <Input
