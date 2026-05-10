@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html, body {
+    background: #ffffff;
+    color: theme('colors.ink');
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: theme('colors.brand.soft');
+    color: theme('colors.brand.DEFAULT');
+  }
+
+  :where(button, a, input, textarea, select):focus-visible {
+    outline: 2px solid theme('colors.brand.ring');
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+}
