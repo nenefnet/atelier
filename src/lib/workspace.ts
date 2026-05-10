@@ -22,59 +22,73 @@ const DEMO_WORKSPACE_SLUG = 'demo';
 /**
  * Look up — or create on first visit — the shared demo user, workspace, and
  * a small amount of seed data so visitors see a populated dashboard.
+ *
+ * Race-safe: every insert uses ON CONFLICT DO NOTHING so concurrent serverless
+ * cold-start requests can run this simultaneously without unique-constraint
+ * crashes. Seed-data inserts run only on the request that actually created the
+ * workspace row.
  */
 async function ensureDemoSetup(): Promise<{ id: string; email: string; name: string }> {
-  // 1. Demo user
-  let user = (await db.select().from(users).where(eq(users.email, DEMO_EMAIL)).limit(1))[0];
+  // 1. Demo user — try insert, ignore if already exists, then re-select.
+  await db
+    .insert(users)
+    .values({ email: DEMO_EMAIL, name: DEMO_NAME })
+    .onConflictDoNothing();
+
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, DEMO_EMAIL))
+    .limit(1);
+
   if (!user) {
-    [user] = await db
-      .insert(users)
-      .values({ email: DEMO_EMAIL, name: DEMO_NAME })
-      .returning();
+    throw new Error('Failed to load demo user');
   }
 
-  // 2. Demo workspace + membership
-  const memberships = await db
-    .select({ workspaceId: workspaceMembers.workspaceId })
-    .from(workspaceMembers)
-    .where(eq(workspaceMembers.userId, user.id))
-    .limit(1);
+  // 2. Demo workspace — try insert; if conflict, fetch existing.
+  // The .returning() result tells us whether the row was newly inserted
+  // (used to decide whether to seed sample data).
+  const insertedWs = await db
+    .insert(workspaces)
+    .values({
+      name: DEMO_WORKSPACE_NAME,
+      slug: DEMO_WORKSPACE_SLUG,
+      ownerId: user.id,
+    })
+    .onConflictDoNothing()
+    .returning({ id: workspaces.id });
 
   let workspaceId: string;
   let isNewWorkspace = false;
 
-  if (memberships.length > 0) {
-    workspaceId = memberships[0].workspaceId;
+  if (insertedWs.length > 0) {
+    workspaceId = insertedWs[0].id;
+    isNewWorkspace = true;
   } else {
-    // Find or create the demo workspace
-    const existingWs = (
-      await db.select().from(workspaces).where(eq(workspaces.slug, DEMO_WORKSPACE_SLUG)).limit(1)
-    )[0];
-    if (existingWs) {
-      workspaceId = existingWs.id;
-    } else {
-      const [created] = await db
-        .insert(workspaces)
-        .values({ name: DEMO_WORKSPACE_NAME, slug: DEMO_WORKSPACE_SLUG, ownerId: user.id })
-        .returning({ id: workspaces.id });
-      workspaceId = created.id;
-      isNewWorkspace = true;
-    }
-    await db.insert(workspaceMembers).values({
-      workspaceId,
-      userId: user.id,
-      role: 'owner',
-    });
+    const [existing] = await db
+      .select({ id: workspaces.id })
+      .from(workspaces)
+      .where(eq(workspaces.slug, DEMO_WORKSPACE_SLUG))
+      .limit(1);
+    if (!existing) throw new Error('Failed to load demo workspace');
+    workspaceId = existing.id;
   }
 
-  // 3. Seed sample data on a brand-new demo workspace
+  // 3. Membership — composite PK so onConflictDoNothing handles dupes.
+  await db
+    .insert(workspaceMembers)
+    .values({ workspaceId, userId: user.id, role: 'owner' })
+    .onConflictDoNothing();
+
+  // 4. Seed sample data only when this request created the workspace row.
   if (isNewWorkspace) {
     await db.insert(tasks).values([
       {
         workspaceId,
         createdBy: user.id,
         title: 'Welcome to Atelier — click around!',
-        description: 'Tasks, notes, team management, and analytics — all in one quiet workspace.',
+        description:
+          'Tasks, notes, team management, and analytics — all in one quiet workspace.',
         status: 'doing',
         priority: 'high',
       },
@@ -167,7 +181,6 @@ export async function requireActiveWorkspace() {
   return { user, ws };
 }
 
-/** Throws if the user is not a member. Use as the authorization check inside server actions. */
 export async function requireMembership(workspaceId: string) {
   const user = await requireUser();
   const [row] = await db
